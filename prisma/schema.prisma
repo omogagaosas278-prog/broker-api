@@ -1,0 +1,73 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  CUSTOMER
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_KYC
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  passwordHash String
+  role         Role          @default(CUSTOMER)
+  status       AccountStatus @default(PENDING_KYC)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  wallets      Wallet[]
+  auditLogs    AuditLog[]    @relation("ActorLogs")
+}
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency  String   @default("USD")
+  balance   Decimal  @default(0.00) @db.Decimal(18, 8)
+  createdAt DateTime @default(now())
+
+  trades    Trade[]
+
+  @@index([userId])
+}
+
+model Trade {
+  id        String   @id @default(uuid())
+  walletId  String
+  wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  symbol    String
+  amount    Decimal  @db.Decimal(18, 8)
+  price     Decimal  @db.Decimal(18, 8)
+  type      String
+  createdAt DateTime @default(now())
+
+  @@index([walletId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actorId   String
+  actor     User     @relation("ActorLogs", fields: [actorId], references: [id])
+  action    String
+  targetId  String?
+  details   Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([createdAt])
+}
