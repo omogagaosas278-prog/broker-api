@@ -1,42 +1,46 @@
 import express from 'express';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
-import customerRoutes from './routes/customer';
-import adminRoutes from './routes/admin';
+import { authenticate, requireRole } from './middleware/auth';
+import {
+  getCustomerProfile,
+  getCustomerWallets,
+  placeCustomerTrade,
+  adminListAllUsers,
+  adminAdjustBalance,
+  adminGetAllTrades,
+} from './controllers/broker';
 
 const app = express();
+app.use(express.json());
 
-app.use(helmet());
-app.use(express.json({ limit: '10kb' }));
-app.set('trust proxy', 1);
+// ------------------------------------------
+// 1. STRICT CUSTOMER ROUTE GROUP
+// Available to: Authenticated Customers (and Admins if explicitly permitted)
+// ------------------------------------------
+const customerRouter = express.Router();
+customerRouter.use(authenticate); // Must be logged in
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
+customerRouter.get('/profile', getCustomerProfile);
+customerRouter.get('/wallets', getCustomerWallets);
+customerRouter.post('/trades', placeCustomerTrade);
+
+app.use('/api/customer', customerRouter);
+
+// ------------------------------------------
+// 2. UNLIMITED ADMIN ROUTE GROUP
+// Available to: ADMIN role ONLY
+// ------------------------------------------
+const adminRouter = express.Router();
+adminRouter.use(authenticate, requireRole(['ADMIN'])); // Strictly Admin
+
+adminRouter.get('/users', adminListAllUsers);
+adminRouter.patch('/wallet/adjust', adminAdjustBalance);
+adminRouter.get('/trades', adminGetAllTrades);
+
+app.use('/api/admin', adminRouter);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Broker API running on port ${PORT}`);
 });
-app.use(limiter);
-
-app.use('/api/customer', customerRoutes);
-app.use('/api/admin', adminRoutes);
-
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
-app.get('/', (_req, res) => res.json({ 
-  name: 'Broker API', 
-  version: '1.0.0',
-  endpoints: {
-    customer: ['/api/customer/profile', '/api/customer/wallets', '/api/customer/trades'],
-    admin: ['/api/admin/users', '/api/admin/wallet/adjust', '/api/admin/trades']
-  }
-}));
 
 export default app;
-
-// For local
-if (typeof require !== 'undefined' && require.main === module) {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Broker API running on port ${PORT}`);
-  });
-}
